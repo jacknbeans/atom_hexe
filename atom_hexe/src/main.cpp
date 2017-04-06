@@ -16,20 +16,22 @@ const json g_ParamValues = {
   {"unsigned int", "number"},
   {"float", "number"},
   {"ScriptHandle", "pointer"},
-  {"glm,,vec2", "table"},
-  {"glm,,vec3", "table"},
+  {"glm::vec2", "table"},
+  {"const glm::vec2", "table"},
+  {"glm::vec3", "table"},
+  {"const glm::vec3", "table"},
   {"ScriptTable", "table"},
   {"SmartScriptTable", "table"},
-  {"hexe,,gameplay,,tile,,TileCoord", "table"},
-  {"gameplay,,tile,,TileCoord", "table"},
-  {"tile,,TileCoord", "table"},
+  {"hexe::gameplay::tile::TileCoord", "table"},
+  {"gameplay::tile::TileCoord", "table"},
+  {"tile::TileCoord", "table"},
   {"TileCoord", "table"},
-  {"hexe,,component,,Entity", "number"},
-  {"component,,Entity", "number"},
+  {"hexe::component,,Entity", "number"},
+  {"component::Entity", "number"},
   {"Entity", "number"},
   {"KeyCode", "number"},
-  {"input,,KeyCode", "number"},
-  {"hexe,,input,,KeyCode", "number"},
+  {"input::KeyCode", "number"},
+  {"hexe::input::KeyCode", "number"},
   {"uint32_t", "number"}
 };
 const std::string g_EnginePrefix = "hexe::service::scripts::scriptbinds::ScriptBind_";
@@ -39,9 +41,6 @@ void XmlErrorCheck(const tinyxml2::XMLError a_LoadResult, tinyxml2::XMLDocument*
   if (a_LoadResult != tinyxml2::XML_SUCCESS) {
     printf("Couldn't load index XML file. Error %s\n", a_XmlDoc->ErrorName());
     a_XmlDoc->ClearError();
-  }
-  else {
-    printf("XML file load successful\n");
   }
 }
 
@@ -87,20 +86,21 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  xmlDoc.Clear();
   for (auto& fileName : fileNames) {
+    xmlDoc.Clear();
+    xmlStr.ClearBuffer();
+
     xmlLoadResult = xmlDoc.LoadFile((g_InputDir + fileName).c_str());
 
     XmlErrorCheck(xmlLoadResult, &xmlDoc);
 
-    xmlStr.ClearBuffer();
     xmlDoc.Print(&xmlStr);
     xmlJsonStr = xml2json(xmlStr.CStr());
     jsonTmp = json::parse(xmlJsonStr.c_str());
 
     auto scriptbind = jsonTmp["doxygen"]["compounddef"];
 
-    std::regex nonChar("(\040)$|(\056)(\040)$");
+    std::regex nonChar("(\040)$");
 
     auto scriptBindName = std::string{};
 
@@ -127,11 +127,13 @@ int main(int argc, char* argv[]) {
 
     if (scriptbind["briefdescription"].find("para") != scriptbind["briefdescription"].end()) {
       jsonFinal["scriptbinds"][scriptBindName]["description"] =
-        regex_replace(scriptbind["briefdescription"]["para"].get<std::string>(), nonChar, "");
+        std::regex_replace(scriptbind["briefdescription"]["para"].get<std::string>(), nonChar, "");
     }
     else {
       printf("No description on script bind %s\n", scriptBindName.c_str());
     }
+
+    if (!methods.is_array()) continue;
 
     for (auto i = 1; i < methods.size(); i++) {
       json method = {
@@ -146,7 +148,7 @@ int main(int argc, char* argv[]) {
 
       if (methods.at(i)["briefdescription"].find("para") != methods.at(i)["briefdescription"].end()) {
         method["description"] = 
-          regex_replace(methods.at(i)["briefdescription"]["para"].get<std::string>(), nonChar, "");
+          std::regex_replace(methods.at(i)["briefdescription"]["para"].get<std::string>(), nonChar, "");
       }
       else {
         printf("No description on function %s for script bind %s\n", methodName.c_str(), scriptBindName.c_str());
@@ -158,17 +160,80 @@ int main(int argc, char* argv[]) {
         auto paramList = methods.at(i)["detaileddescription"]["para"]["parameterlist"];
 
         if (paramList.is_array()) {
-          for (auto& paramItem : paramList) {
-            auto paramitem = paramItem["parameteritem"];
-            if (paramItem["@kind"].get<std::string>().compare("param") == 0) {
-              for (auto param = 1; param < methods.at(i)["param"].size(); param++) {
-                auto paramName = methods.at(i)["param"].at(param)["declname"];
+          for (auto& j : paramList) {
+            auto paramitem = j["parameteritem"];
+
+            if (j["@kind"].get<std::string>().compare("param") == 0) {
+              if (methods.at(i)["param"].is_array()) {
+                for (auto param = 1; param < methods.at(i)["param"].size(); param++) {
+                  auto paramName = methods.at(i)["param"].at(param)["declname"].get<std::string>();
+                  auto paramType = g_ParamValues[methods.at(i)["param"].at(param)["type"].get<std::string>()].get<std::string>();
+                  auto paramDesc = std::string{};
+
+                  if (paramitem.is_array()) {
+                    if (paramitem.at(param - 1)["parameterdescription"]["para"].is_object()) {
+                      auto paramText = paramitem.at(param - 1)["parameterdescription"]["para"]["#text"].at(0).get<std::string>();
+                      auto results = std::smatch{};
+                      auto lastChar = std::string{};
+
+                      while (std::regex_search(paramText, results, nonChar)) {
+                        lastChar = results[0];
+                        paramText = std::regex_replace(paramText, nonChar, "");
+                      }
+                      paramText += lastChar;
+                      paramDesc += paramText;
+
+                      paramDesc +=
+                        paramitem.at(param - 1)["parameterdescription"]["para"]["ulink"]["@url"].get<std::string>();
+
+                      paramText = paramitem.at(param - 1)["parameterdescription"]["para"]["#text"].at(1).get<std::string>();
+                      paramDesc += paramText;
+                    }
+                    else {
+                      paramDesc =
+                        std::regex_replace(paramitem.at(param - 1)["parameterdescription"]["para"].get<std::string>(), nonChar, "");
+                    }
+                  }
+                  else {
+                    paramDesc =
+                      std::regex_replace(paramitem["parameterdescription"]["para"].get<std::string>(), nonChar, "");
+                  }
+
+                  method["params"][paramName]["type"] = paramType;
+                  method["params"][paramName]["description"] = paramDesc;
+                }
               }
+            }
+            else if(j["@kind"].get<std::string>().compare("retval") == 0) {
+              method["ret"]["type"] = 
+                g_ParamValues[paramitem["parameternamelist"]["parametername"].get<std::string>()].get<std::string>();
+              method["ret"]["description"] =
+                std::regex_replace(paramitem["parameterdescription"]["para"].get<std::string>(), nonChar, "");
             }
           }
         }
         else {
-          
+          auto paramitem = paramList["parameteritem"];
+          if (methods.at(i)["param"].is_array()) {
+            for (auto param = 1; param < methods.at(i)["param"].size(); param++) {
+              auto type = methods.at(i)["param"];
+              auto paramName = methods.at(i)["param"].at(param)["declname"].get<std::string>();
+              auto paramType = g_ParamValues[methods.at(i)["param"].at(param)["type"].get<std::string>()].get<std::string>();
+              auto paramDesc = std::string{};
+
+              if (paramitem.is_array()) {
+                paramDesc =
+                  std::regex_replace(paramitem.at(param - 1)["parameterdescription"]["para"].get<std::string>(), nonChar, "");
+              }
+              else {
+                paramDesc =
+                  std::regex_replace(paramitem["parameterdescription"]["para"].get<std::string>(), nonChar, "");
+              }
+
+              method["params"][paramName]["type"] = paramType;
+              method["params"][paramName]["description"] = paramDesc;
+            }
+          }
         }
       }
 
@@ -176,7 +241,10 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  printf("%s\n", jsonFinal.dump(2).c_str());
+  std::ofstream file{};
+  file.open((g_OutputDir + "scriptbinds.json").c_str());
+  file << jsonFinal.dump(2);
+  file.close();
 
   return 0;
 }
