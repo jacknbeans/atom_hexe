@@ -59,7 +59,9 @@ int main(int argc, char* argv[]) {
       inputDir = argv[i + 1];
     }
     else if (strcmp("-h", argv[i]) == 0) {
-      printf("atom_hexe help\n");
+      printf("\nHelp for atom_hexe:\n\n"
+             "    -i \"input_dir\"    Point to where doxygen has produced the XML documentation\n"
+             "    -o \"output_dir\"   Point to where the JSON file should be output\n");
       return 0;
     }
   }
