@@ -6,8 +6,6 @@
 
 using json = nlohmann::json;
 
-const std::string g_InputDir = "I:\\Y2016C-Y2-PROGTeam04\\documentation\\doxygen\\output\\xml\\";
-const std::string g_OutputDir = "I:\\Y2016C-Y2-PROGTeam04\\documentation\\doxygen\\output\\json\\";
 const json g_ParamValues = {
   {"const char *", "string"},
   {"const char*", "string"},
@@ -45,8 +43,29 @@ void XmlErrorCheck(const tinyxml2::XMLError a_LoadResult, tinyxml2::XMLDocument*
 }
 
 int main(int argc, char* argv[]) {
+  if (argc == 1) {
+    printf("No arguments, atom_hexe requires -i for input directory and -o for output directory\n");
+    return -1;
+  }
+
+  auto inputDir = std::string{};
+  auto outputDir = std::string{};
+
+  for (auto i = 0; i < argc; i++) {
+    if (strcmp("-o", argv[i]) == 0) {
+      outputDir = argv[i + 1];
+    }
+    else if (strcmp("-i", argv[i]) == 0) {
+      inputDir = argv[i + 1];
+    }
+    else if (strcmp("-h", argv[i]) == 0) {
+      printf("atom_hexe help\n");
+      return 0;
+    }
+  }
+
   tinyxml2::XMLDocument xmlDoc{};
-  tinyxml2::XMLError xmlLoadResult = xmlDoc.LoadFile((g_InputDir + "index.xml").c_str());
+  tinyxml2::XMLError xmlLoadResult = xmlDoc.LoadFile((inputDir + "\\index.xml").c_str());
 
   XmlErrorCheck(xmlLoadResult, &xmlDoc);
 
@@ -90,7 +109,7 @@ int main(int argc, char* argv[]) {
     xmlDoc.Clear();
     xmlStr.ClearBuffer();
 
-    xmlLoadResult = xmlDoc.LoadFile((g_InputDir + fileName).c_str());
+    xmlLoadResult = xmlDoc.LoadFile((inputDir + "\\" + fileName).c_str());
 
     XmlErrorCheck(xmlLoadResult, &xmlDoc);
 
@@ -242,7 +261,7 @@ int main(int argc, char* argv[]) {
   }
 
   std::ofstream file{};
-  file.open((g_OutputDir + "scriptbinds.json").c_str());
+  file.open((outputDir + "\\scriptbinds.json").c_str());
   file << jsonFinal.dump(2);
   file.close();
 
