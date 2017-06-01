@@ -15,6 +15,7 @@ const json g_ParamValues = {
   {"int", "number"},
   {"unsigned int", "number"},
   {"float", "number"},
+  {"double", "number"},
   {"ScriptHandle", "pointer"},
   {"glm::vec2", "table"},
   {"const glm::vec2", "table"},
@@ -32,7 +33,7 @@ const json g_ParamValues = {
   {"gameplay::tile::TileCoord", "table"},
   {"tile::TileCoord", "table"},
   {"TileCoord", "table"},
-  {"hexe::component,,Entity", "number"},
+  {"hexe::component::Entity", "number"},
   {"component::Entity", "number"},
   {"Entity", "number"},
   {"KeyCode", "number"},
@@ -44,11 +45,26 @@ const json g_ParamValues = {
 const std::string g_EnginePrefix = "hexe::service::scripts::scriptbinds::ScriptBind_";
 const std::string g_GamePrefix = "hexegame::scriptbinds::ScriptBind_";
 
+// This is to remove any whitespace at the end of any string
+std::regex g_NonChar("(\040)$");
+
 // Just some error checking when loading an xml file
 void XmlErrorCheck(const tinyxml2::XMLError a_LoadResult, tinyxml2::XMLDocument* a_XmlDoc, const char* a_XmlFileName) {
   if (a_LoadResult != tinyxml2::XML_SUCCESS) {
     printf("Couldn't load %s. Error %s\n", a_XmlFileName, a_XmlDoc->ErrorName());
     a_XmlDoc->ClearError();
+  }
+}
+
+void SetReturnValue(json& a_Method, const json& a_Item) {
+  auto itemDesc = std::regex_replace(a_Item["parameterdescription"]["para"].get<std::string>(), g_NonChar, "");
+  auto itemType = a_Item["parameternamelist"]["parametername"].get<std::string>();
+  if (g_ParamValues.find(itemType) != g_ParamValues.end()) {
+    json ret = json::object();
+    ret = json::object();
+    ret["type"] = g_ParamValues[itemType].get<std::string>();
+    ret["desc"] = itemDesc;
+    a_Method["ret"].push_back(ret);
   }
 }
 
@@ -150,9 +166,6 @@ int main(int argc, char* argv[]) {
 
     auto scriptbind = jsonTmp["doxygen"]["compounddef"];
 
-    // This is to remove any whitespace at the end of any string
-    std::regex nonChar("(\040)$");
-
     // Store the script bind name for later use when I need to add the methods and description to it
     auto scriptBindName = std::string{};
 
@@ -182,7 +195,7 @@ int main(int argc, char* argv[]) {
     // Find the description of the script bind and put it in our final json object
     if (scriptbind["briefdescription"].find("para") != scriptbind["briefdescription"].end()) {
       jsonFinal["scriptbinds"][scriptBindName]["description"] =
-        std::regex_replace(scriptbind["briefdescription"]["para"].get<std::string>(), nonChar, "");
+        std::regex_replace(scriptbind["briefdescription"]["para"].get<std::string>(), g_NonChar, "");
     }
     else {
       printf("No description on script bind %s\n", scriptBindName.c_str());
@@ -196,28 +209,28 @@ int main(int argc, char* argv[]) {
       json method = {
         {"description", ""},
         {"params", json::array()},
-        {"ret", {
-          {"type", ""},
-          {"description", ""}
-        }}
+        {"ret", json::array()}
       };
       auto methodName = methods.at(i)["name"].get<std::string>();
 
       // Find the description of the method
       if (methods.at(i)["briefdescription"].find("para") != methods.at(i)["briefdescription"].end()) {
         method["description"] = 
-          std::regex_replace(methods.at(i)["briefdescription"]["para"].get<std::string>(), nonChar, "");
+          std::regex_replace(methods.at(i)["briefdescription"]["para"].get<std::string>(), g_NonChar, "");
       }
       else {
         printf("No description on function %s for script bind %s\n", methodName.c_str(), scriptBindName.c_str());
       }
 
-      method["ret"]["type"] = "void";
+      json voidRet = json::object();
+      voidRet["type"] = "void";
+      voidRet["desc"] = "Function doesn't return anything";
+      method["ret"].push_back(voidRet);
 
       // There are a lot of checks here because the xml output varies so much depending on whether or not
       // there was a custom return value, how many params there are, etc.
 
-      //This first check is to find out whether or not there are any parameters and/or a custom return statement
+      // This first check is to find out whether or not there are any parameters and/or a custom return statement
       if (methods.at(i)["detaileddescription"].find("para") != methods.at(i)["detaileddescription"].end()) {
         auto paramList = methods.at(i)["detaileddescription"]["para"]["parameterlist"];
 
@@ -245,9 +258,9 @@ int main(int argc, char* argv[]) {
                       auto lastChar = std::string{};
 
                       // Finding every single whitespace character in the string and replacing it with an empty one
-                      while (std::regex_search(paramText, results, nonChar)) {
+                      while (std::regex_search(paramText, results, g_NonChar)) {
                         lastChar = results[0];
-                        paramText = std::regex_replace(paramText, nonChar, "");
+                        paramText = std::regex_replace(paramText, g_NonChar, "");
                       }
 
                       // Reconstructing the string to be only one line instead of multiple
@@ -264,13 +277,13 @@ int main(int argc, char* argv[]) {
                     // If the parameter item is not an object, than it doesn't have multiple lines and can just be grabbed in it's entirety
                     else {
                       paramDesc =
-                        std::regex_replace(paramitem.at(param - 1)["parameterdescription"]["para"].get<std::string>(), nonChar, "");
+                        std::regex_replace(paramitem.at(param - 1)["parameterdescription"]["para"].get<std::string>(), g_NonChar, "");
                     }
                   }
                   // If the parameter item is also not an array, it can be grabbed in it's entirety
                   else {
                     paramDesc =
-                      std::regex_replace(paramitem["parameterdescription"]["para"].get<std::string>(), nonChar, "");
+                      std::regex_replace(paramitem["parameterdescription"]["para"].get<std::string>(), g_NonChar, "");
                   }
 
                   // When putting the methods in the method template I'm using an array so that I can ensure
@@ -282,10 +295,18 @@ int main(int argc, char* argv[]) {
               }
             }
             else if(j["@kind"].get<std::string>().compare("retval") == 0) {
-              method["ret"]["type"] = 
-                g_ParamValues[paramitem["parameternamelist"]["parametername"].get<std::string>()].get<std::string>();
-              method["ret"]["description"] =
-                std::regex_replace(paramitem["parameterdescription"]["para"].get<std::string>(), nonChar, "");
+              if (method["ret"].at(0)["type"].get<std::string>().compare("void") == 0) {
+                method["ret"].clear();
+              }
+
+              if (paramitem.is_array()) {
+                for (auto item : paramitem) {
+                  SetReturnValue(method, item);
+                }
+              }
+              else {
+                SetReturnValue(method, paramitem);
+              }
             }
           }
         }
@@ -303,11 +324,11 @@ int main(int argc, char* argv[]) {
 
               if (paramitem.is_array()) {
                 paramDesc =
-                  std::regex_replace(paramitem.at(param - 1)["parameterdescription"]["para"].get<std::string>(), nonChar, "");
+                  std::regex_replace(paramitem.at(param - 1)["parameterdescription"]["para"].get<std::string>(), g_NonChar, "");
               }
               else {
                 paramDesc =
-                  std::regex_replace(paramitem["parameterdescription"]["para"].get<std::string>(), nonChar, "");
+                  std::regex_replace(paramitem["parameterdescription"]["para"].get<std::string>(), g_NonChar, "");
               }
 
               method["params"].push_back(json::object({ {paramName, json::object({ {"type", paramType} })} }));
@@ -317,10 +338,18 @@ int main(int argc, char* argv[]) {
           // Grab the custom return statement and fill it's information in the json method
           else {
             if (paramList["@kind"].get<std::string>().compare("retval") == 0) {
-              method["ret"]["type"] = 
-                g_ParamValues[paramitem["parameternamelist"]["parametername"].get<std::string>()].get<std::string>();
-              method["ret"]["description"] =
-                std::regex_replace(paramitem["parameterdescription"]["para"].get<std::string>(), nonChar, "");
+              if (method["ret"].at(0)["type"].get<std::string>().compare("void") == 0) {
+                method["ret"].clear();
+              }
+
+              if (paramitem.is_array()) {
+                for (auto item : paramitem) {
+                  SetReturnValue(method, item);
+                }
+              }
+              else {
+                SetReturnValue(method, paramitem);
+              }
             }
           }
         }
